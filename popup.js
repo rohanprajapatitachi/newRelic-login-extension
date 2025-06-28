@@ -1,145 +1,335 @@
 document.addEventListener('DOMContentLoaded', function() {
+  // Tab management
+  const tabs = document.querySelectorAll('.tab');
+  const tabContents = document.querySelectorAll('.tab-content');
+  
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const targetTab = tab.dataset.tab;
+      
+      // Update active tab
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      
+      // Update active content
+      tabContents.forEach(content => {
+        content.classList.remove('active');
+        if (content.id === `${targetTab}-tab`) {
+          content.classList.add('active');
+        }
+      });
+      
+      // Load tab-specific data
+      loadTabData(targetTab);
+    });
+  });
+
+  // Login tab elements
   const emailInput = document.getElementById('email');
   const passwordInput = document.getElementById('password');
-  const loginBtn = document.getElementById('loginBtn');
-  const extractBtn = document.getElementById('extractBtn');
+  const saveCredentialsBtn = document.getElementById('saveCredentialsBtn');
+  const autoLoginBtn = document.getElementById('autoLoginBtn');
   const statusDiv = document.getElementById('status');
-  const cookieSection = document.getElementById('cookieSection');
-  const cookieDisplay = document.getElementById('cookieDisplay');
-  const copyBtn = document.getElementById('copyBtn');
-  const exportBtn = document.getElementById('exportBtn');
 
-  // Check if already logged in
-  checkLoginStatus();
+  // Sessions tab elements
+  const sessionStatus = document.getElementById('sessionStatus');
+  const extractSessionBtn = document.getElementById('extractSessionBtn');
+  const applySessionBtn = document.getElementById('applySessionBtn');
+  const sessionStatusMsg = document.getElementById('sessionStatusMsg');
 
-  loginBtn.addEventListener('click', async () => {
-    const email = emailInput.value.trim();
-    const password = passwordInput.value.trim();
+  // Export/Import tab elements
+  const exportSessionBtn = document.getElementById('exportSessionBtn');
+  const importSessionBtn = document.getElementById('importSessionBtn');
+  const sessionDataTextarea = document.getElementById('sessionData');
+  const importFromTextBtn = document.getElementById('importFromTextBtn');
+  const exportStatus = document.getElementById('exportStatus');
+
+  // Event listeners
+  saveCredentialsBtn.addEventListener('click', saveCredentials);
+  autoLoginBtn.addEventListener('click', toggleAutoLogin);
+  extractSessionBtn.addEventListener('click', extractSession);
+  applySessionBtn.addEventListener('click', applySession);
+  exportSessionBtn.addEventListener('click', exportSession);
+  importSessionBtn.addEventListener('click', importSession);
+  importFromTextBtn.addEventListener('click', importFromText);
+
+  // Load initial data
+  loadTabData('login');
+});
+
+async function loadTabData(tabName) {
+  switch (tabName) {
+    case 'login':
+      await loadLoginData();
+      break;
+    case 'sessions':
+      await loadSessionData();
+      break;
+    case 'export':
+      await loadExportData();
+      break;
+  }
+}
+
+async function loadLoginData() {
+  try {
+    const result = await chrome.storage.local.get(['newrelic_credentials', 'newrelic_auto_login']);
+    const credentials = result.newrelic_credentials;
+    const autoLogin = result.newrelic_auto_login;
+
+    if (credentials) {
+      document.getElementById('email').value = credentials.email;
+      document.getElementById('password').value = credentials.password;
+    }
+
+    const autoLoginBtn = document.getElementById('autoLoginBtn');
+    if (autoLogin) {
+      autoLoginBtn.textContent = 'Disable Auto-Login';
+      autoLoginBtn.style.backgroundColor = '#dc3545';
+    } else {
+      autoLoginBtn.textContent = 'Enable Auto-Login';
+      autoLoginBtn.style.backgroundColor = '#007cba';
+    }
+  } catch (error) {
+    console.error('Error loading login data:', error);
+  }
+}
+
+async function loadSessionData() {
+  try {
+    const result = await chrome.runtime.sendMessage({ action: 'checkSessionStatus' });
+    const sessionStatus = document.getElementById('sessionStatus');
     
-    if (!email || !password) {
-      showStatus('Please enter both email and password', 'error');
+    if (result.isLoggedIn) {
+      sessionStatus.innerHTML = `
+        <strong>Status:</strong> Logged in<br>
+        <strong>Session Cookies:</strong> ${result.sessionCount}<br>
+        <strong>Auto-Login:</strong> ${result.autoLoginEnabled ? 'Enabled' : 'Disabled'}<br>
+        <strong>Stored Session:</strong> ${result.hasStoredSession ? 'Available' : 'None'}
+      `;
+    } else {
+      sessionStatus.innerHTML = `
+        <strong>Status:</strong> Not logged in<br>
+        <strong>Auto-Login:</strong> ${result.autoLoginEnabled ? 'Enabled' : 'Disabled'}<br>
+        <strong>Stored Session:</strong> ${result.hasStoredSession ? 'Available' : 'None'}
+      `;
+    }
+  } catch (error) {
+    console.error('Error loading session data:', error);
+  }
+}
+
+async function loadExportData() {
+  // This tab doesn't need initial data loading
+}
+
+async function saveCredentials() {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value.trim();
+  
+  if (!email || !password) {
+    showStatus('Please enter both email and password', 'error');
+    return;
+  }
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      action: 'saveCredentials',
+      email: email,
+      password: password
+    });
+
+    if (result.success) {
+      showStatus(result.message, 'success');
+    } else {
+      showStatus(`Error: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    showStatus(`Error: ${error.message}`, 'error');
+  }
+}
+
+async function toggleAutoLogin() {
+  try {
+    const result = await chrome.storage.local.get(['newrelic_auto_login']);
+    const currentState = result.newrelic_auto_login || false;
+    const newState = !currentState;
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'enableAutoLogin',
+      enabled: newState
+    });
+
+    if (response.success) {
+      showStatus(response.message, 'success');
+      
+      const autoLoginBtn = document.getElementById('autoLoginBtn');
+      if (newState) {
+        autoLoginBtn.textContent = 'Disable Auto-Login';
+        autoLoginBtn.style.backgroundColor = '#dc3545';
+      } else {
+        autoLoginBtn.textContent = 'Enable Auto-Login';
+        autoLoginBtn.style.backgroundColor = '#007cba';
+      }
+    } else {
+      showStatus(`Error: ${response.error}`, 'error');
+    }
+  } catch (error) {
+    showStatus(`Error: ${error.message}`, 'error');
+  }
+}
+
+async function extractSession() {
+  try {
+    const result = await chrome.runtime.sendMessage({ action: 'extractSession' });
+    
+    if (result.success) {
+      showSessionStatus(result.message, 'success');
+      await loadSessionData(); // Refresh session data
+    } else {
+      showSessionStatus(`Error: ${result.error}`, 'error');
+    }
+  } catch (error) {
+    showSessionStatus(`Error: ${error.message}`, 'error');
+  }
+}
+
+async function applySession() {
+  try {
+    const result = await chrome.storage.local.get(['newrelic_session_data']);
+    const sessionData = result.newrelic_session_data;
+    
+    if (!sessionData) {
+      showSessionStatus('No stored session found', 'error');
       return;
     }
 
-    loginBtn.disabled = true;
-    loginBtn.textContent = 'Logging in...';
-    showStatus('Attempting to login...', 'info');
-
-    try {
-      const result = await chrome.runtime.sendMessage({
-        action: 'login',
-        email: email,
-        password: password
-      });
-
-      if (result.success) {
-        showStatus('Login successful! Extracting cookies...', 'success');
-        await extractCookies();
-      } else {
-        showStatus(`Login failed: ${result.error}`, 'error');
-      }
-    } catch (error) {
-      showStatus(`Error: ${error.message}`, 'error');
-    } finally {
-      loginBtn.disabled = false;
-      loginBtn.textContent = 'Login & Extract Cookies';
-    }
-  });
-
-  extractBtn.addEventListener('click', async () => {
-    await extractCookies();
-  });
-
-  copyBtn.addEventListener('click', () => {
-    const cookieText = cookieDisplay.textContent;
-    navigator.clipboard.writeText(cookieText).then(() => {
-      showStatus('Cookies copied to clipboard!', 'success');
-    }).catch(() => {
-      showStatus('Failed to copy to clipboard', 'error');
+    const response = await chrome.runtime.sendMessage({
+      action: 'applySession',
+      sessionData: sessionData
     });
-  });
 
-  exportBtn.addEventListener('click', () => {
-    const cookieText = cookieDisplay.textContent;
-    const csvContent = convertToCSV(cookieText);
-    downloadCSV(csvContent, 'newrelic_cookies.csv');
-    showStatus('Cookies exported to CSV file!', 'success');
-  });
-
-  async function checkLoginStatus() {
-    try {
-      const result = await chrome.runtime.sendMessage({ action: 'checkStatus' });
-      if (result.isLoggedIn) {
-        extractBtn.style.display = 'block';
-        showStatus('Already logged in. You can extract cookies.', 'info');
-      }
-    } catch (error) {
-      console.log('Status check failed:', error);
+    if (response.success) {
+      showSessionStatus(response.message, 'success');
+      await loadSessionData(); // Refresh session data
+    } else {
+      showSessionStatus(`Error: ${response.error}`, 'error');
     }
+  } catch (error) {
+    showSessionStatus(`Error: ${error.message}`, 'error');
   }
+}
 
-  async function extractCookies() {
-    try {
-      const result = await chrome.runtime.sendMessage({ action: 'extractCookies' });
-      if (result.success) {
-        displayCookies(result.cookies);
-        showStatus('Cookies extracted successfully!', 'success');
-      } else {
-        showStatus(`Failed to extract cookies: ${result.error}`, 'error');
-      }
-    } catch (error) {
-      showStatus(`Error extracting cookies: ${error.message}`, 'error');
+async function exportSession() {
+  try {
+    const result = await chrome.runtime.sendMessage({ action: 'exportSession' });
+    
+    if (result.success) {
+      // Create and download file
+      const blob = new Blob([result.data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `newrelic_session_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      showExportStatus('Session exported successfully!', 'success');
+    } else {
+      showExportStatus(`Error: ${result.error}`, 'error');
     }
+  } catch (error) {
+    showExportStatus(`Error: ${error.message}`, 'error');
   }
+}
 
-  function displayCookies(cookies) {
-    cookieSection.style.display = 'block';
-    
-    // Format cookies for display
-    const cookieText = cookies.map(cookie => 
-      `${cookie.name}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path}`
-    ).join('\n');
-    
-    cookieDisplay.textContent = cookieText;
-  }
+async function importSession() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      try {
+        const text = await file.text();
+        const response = await chrome.runtime.sendMessage({
+          action: 'importSession',
+          sessionData: text
+        });
 
-  function showStatus(message, type) {
-    statusDiv.textContent = message;
-    statusDiv.className = `status ${type}`;
-    statusDiv.style.display = 'block';
-    
-    setTimeout(() => {
-      statusDiv.style.display = 'none';
-    }, 5000);
-  }
-
-  function convertToCSV(cookieText) {
-    const lines = cookieText.split('\n');
-    const csvLines = ['Name,Value,Domain,Path'];
-    
-    lines.forEach(line => {
-      if (line.includes('=')) {
-        const parts = line.split(';');
-        const nameValue = parts[0].split('=');
-        const domain = parts[1]?.replace(' Domain=', '') || '';
-        const path = parts[2]?.replace(' Path=', '') || '';
-        
-        csvLines.push(`"${nameValue[0]}","${nameValue[1]}","${domain}","${path}"`);
+        if (response.success) {
+          showExportStatus(response.message, 'success');
+          await loadSessionData(); // Refresh session data
+        } else {
+          showExportStatus(`Error: ${response.error}`, 'error');
+        }
+      } catch (error) {
+        showExportStatus(`Error reading file: ${error.message}`, 'error');
       }
+    }
+  };
+  
+  input.click();
+}
+
+async function importFromText() {
+  const sessionData = document.getElementById('sessionData').value.trim();
+  
+  if (!sessionData) {
+    showExportStatus('Please enter session data', 'error');
+    return;
+  }
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'importSession',
+      sessionData: sessionData
     });
-    
-    return csvLines.join('\n');
-  }
 
-  function downloadCSV(content, filename) {
-    const blob = new Blob([content], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (response.success) {
+      showExportStatus(response.message, 'success');
+      document.getElementById('sessionData').value = '';
+      await loadSessionData(); // Refresh session data
+    } else {
+      showExportStatus(`Error: ${response.error}`, 'error');
+    }
+  } catch (error) {
+    showExportStatus(`Error: ${error.message}`, 'error');
   }
-}); 
+}
+
+function showStatus(message, type) {
+  const statusDiv = document.getElementById('status');
+  statusDiv.textContent = message;
+  statusDiv.className = `status ${type}`;
+  statusDiv.style.display = 'block';
+  
+  setTimeout(() => {
+    statusDiv.style.display = 'none';
+  }, 5000);
+}
+
+function showSessionStatus(message, type) {
+  const statusDiv = document.getElementById('sessionStatusMsg');
+  statusDiv.textContent = message;
+  statusDiv.className = `status ${type}`;
+  statusDiv.style.display = 'block';
+  
+  setTimeout(() => {
+    statusDiv.style.display = 'none';
+  }, 5000);
+}
+
+function showExportStatus(message, type) {
+  const statusDiv = document.getElementById('exportStatus');
+  statusDiv.textContent = message;
+  statusDiv.className = `status ${type}`;
+  statusDiv.style.display = 'block';
+  
+  setTimeout(() => {
+    statusDiv.style.display = 'none';
+  }, 5000);
+} 
