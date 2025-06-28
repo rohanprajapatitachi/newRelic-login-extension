@@ -40,4 +40,3 @@ This browser extension automatically logs into New Relic and extracts authentica
 - Clear browser cache if you encounter issues
 - Check that the extension has the necessary permissions
 
-## File Structure 
