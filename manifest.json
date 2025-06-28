@@ -12,7 +12,8 @@
   ],
   "host_permissions": [
     "https://one.newrelic.com/*",
-    "https://*.newrelic.com/*"
+    "https://*.newrelic.com/*",
+    "https://login.newrelic.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -23,7 +24,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://one.newrelic.com/*"],
+      "matches": ["https://one.newrelic.com/*", "https://login.newrelic.com/*"],
       "js": ["content.js"]
     }
   ],
