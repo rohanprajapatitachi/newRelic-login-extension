@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "New Relic Cookie Extractor",
+  "version": "1.0",
+  "description": "Automatically logs into New Relic and extracts cookies for Excel use",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "cookies",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://one.newrelic.com/*",
+    "https://*.newrelic.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "New Relic Cookie Extractor"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://one.newrelic.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+} 
