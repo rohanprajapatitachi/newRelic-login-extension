@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "New Relic Cookie Extractor",
+  "name": "New Relic Session Manager",
   "version": "1.0",
-  "description": "Automatically logs into New Relic and extracts cookies for Excel use",
+  "description": "Automatically logs into New Relic and shares sessions across devices",
   "permissions": [
     "activeTab",
     "storage",
@@ -11,21 +11,22 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://one.newrelic.com/*",
+    "https://login.newrelic.com/*",
     "https://*.newrelic.com/*",
-    "https://login.newrelic.com/*"
+    "https://one.newrelic.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "New Relic Cookie Extractor"
+    "default_title": "New Relic Session Manager"
   },
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://one.newrelic.com/*", "https://login.newrelic.com/*"],
-      "js": ["content.js"]
+      "matches": ["https://login.newrelic.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
     }
   ],
   "icons": {
