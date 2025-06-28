@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <style>
     body {
-      width: 350px;
+      width: 400px;
       padding: 20px;
       font-family: Arial, sans-serif;
     }
@@ -66,50 +66,92 @@
       color: #0c5460;
       border: 1px solid #bee5eb;
     }
-    .cookie-display {
-      max-height: 200px;
-      overflow-y: auto;
+    .session-info {
       background-color: #f8f9fa;
       padding: 10px;
       border-radius: 4px;
-      font-family: monospace;
       font-size: 12px;
-      white-space: pre-wrap;
-      word-break: break-all;
     }
-    .copy-btn {
-      background-color: #28a745;
-      margin-top: 10px;
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #ccc;
+      margin-bottom: 15px;
     }
-    .copy-btn:hover {
-      background-color: #218838;
+    .tab {
+      padding: 10px 15px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      border-bottom: none;
+      background: #f8f9fa;
+    }
+    .tab.active {
+      background: white;
+      border-color: #ccc;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>New Relic Cookie Extractor</h2>
+    <h2>New Relic Session Manager</h2>
     
-    <div class="input-group">
-      <label for="email">Email:</label>
-      <input type="email" id="email" placeholder="Enter your email">
+    <div class="tabs">
+      <div class="tab active" data-tab="login">Login</div>
+      <div class="tab" data-tab="sessions">Sessions</div>
+      <div class="tab" data-tab="export">Export/Import</div>
     </div>
     
-    <div class="input-group">
-      <label for="password">Password:</label>
-      <input type="password" id="password" placeholder="Enter your password">
+    <!-- Login Tab -->
+    <div class="tab-content active" id="login-tab">
+      <div class="input-group">
+        <label for="email">Email:</label>
+        <input type="email" id="email" placeholder="Enter your email">
+      </div>
+      
+      <div class="input-group">
+        <label for="password">Password:</label>
+        <input type="password" id="password" placeholder="Enter your password">
+      </div>
+      
+      <button id="saveCredentialsBtn">Save Credentials</button>
+      <button id="autoLoginBtn">Enable Auto-Login</button>
+      
+      <div id="status" class="status" style="display: none;"></div>
     </div>
     
-    <button id="loginBtn">Login & Extract Cookies</button>
-    <button id="extractBtn" style="display: none;">Extract Current Cookies</button>
+    <!-- Sessions Tab -->
+    <div class="tab-content" id="sessions-tab">
+      <h3>Current Session Status</h3>
+      <div id="sessionStatus" class="session-info">
+        Checking session status...
+      </div>
+      
+      <button id="extractSessionBtn">Extract Current Session</button>
+      <button id="applySessionBtn">Apply Stored Session</button>
+      
+      <div id="sessionStatusMsg" class="status" style="display: none;"></div>
+    </div>
     
-    <div id="status" class="status" style="display: none;"></div>
-    
-    <div id="cookieSection" style="display: none;">
-      <h3>Extracted Cookies:</h3>
-      <div id="cookieDisplay" class="cookie-display"></div>
-      <button id="copyBtn" class="copy-btn">Copy to Clipboard</button>
-      <button id="exportBtn">Export to Excel Format</button>
+    <!-- Export/Import Tab -->
+    <div class="tab-content" id="export-tab">
+      <h3>Session Management</h3>
+      
+      <button id="exportSessionBtn">Export Session to File</button>
+      <button id="importSessionBtn">Import Session from File</button>
+      
+      <div class="input-group">
+        <label for="sessionData">Session Data (for manual import):</label>
+        <textarea id="sessionData" rows="5" placeholder="Paste session data here..."></textarea>
+      </div>
+      
+      <button id="importFromTextBtn">Import from Text</button>
+      
+      <div id="exportStatus" class="status" style="display: none;"></div>
     </div>
   </div>
   
