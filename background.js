@@ -41,6 +41,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case 'autoLogin':
       handleAutoLogin().then(sendResponse);
       return true;
+      
+    case 'loginFormReady':
+      handleLoginFormReady(sender.tab.id).then(sendResponse);
+      return true;
+      
+    case 'loginSuccess':
+      handleLoginSuccess().then(sendResponse);
+      return true;
   }
 });
 
@@ -52,8 +60,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // Check if auto-login is enabled
     chrome.storage.local.get([STORAGE_KEYS.AUTO_LOGIN], (result) => {
       if (result[STORAGE_KEYS.AUTO_LOGIN]) {
-        console.log('Auto-login enabled, triggering login...');
-        handleAutoLogin();
+        console.log('Auto-login enabled, will trigger when form is ready...');
       }
     });
   }
@@ -233,7 +240,72 @@ async function checkSessionStatus() {
   }
 }
 
-// Handle automatic login
+// Handle login form ready notification
+async function handleLoginFormReady(tabId) {
+  try {
+    // Check if auto-login is enabled
+    const result = await chrome.storage.local.get([STORAGE_KEYS.AUTO_LOGIN]);
+    if (!result[STORAGE_KEYS.AUTO_LOGIN]) {
+      console.log('Auto-login not enabled');
+      return { success: false, message: 'Auto-login not enabled' };
+    }
+
+    // Get stored credentials
+    const credResult = await chrome.storage.local.get([STORAGE_KEYS.CREDENTIALS]);
+    const credentials = credResult[STORAGE_KEYS.CREDENTIALS];
+    
+    if (!credentials) {
+      console.log('No stored credentials found');
+      return { success: false, message: 'No stored credentials found' };
+    }
+
+    console.log('Starting auto-login process...');
+    
+    // Inject login script
+    const loginResult = await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      function: performAutoLogin,
+      args: [credentials.email, credentials.password]
+    });
+
+    if (loginResult[0].result) {
+      console.log('Auto-login script executed successfully');
+      return { success: true, message: 'Auto-login process started' };
+    } else {
+      console.log('Auto-login script failed');
+      return { success: false, message: 'Auto-login failed' };
+    }
+  } catch (error) {
+    console.error('Error in handleLoginFormReady:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Handle successful login
+async function handleLoginSuccess() {
+  try {
+    console.log('Login successful, extracting session...');
+    
+    // Wait a bit for cookies to be set
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // Extract session
+    const result = await extractSession();
+    
+    if (result.success) {
+      console.log('Session extracted successfully:', result.message);
+      return { success: true, message: 'Login successful and session extracted' };
+    } else {
+      console.log('Failed to extract session:', result.error);
+      return { success: false, error: result.error };
+    }
+  } catch (error) {
+    console.error('Error in handleLoginSuccess:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Handle automatic login (legacy function)
 async function handleAutoLogin() {
   try {
     // Get stored credentials
@@ -263,13 +335,7 @@ async function handleAutoLogin() {
     });
 
     if (loginResult[0].result) {
-      // Wait for login to complete
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      // Extract session after successful login
-      await extractSession();
-      
-      return { success: true, message: 'Auto-login completed successfully' };
+      return { success: true, message: 'Auto-login process started' };
     } else {
       return { success: false, error: 'Auto-login failed' };
     }
@@ -281,38 +347,77 @@ async function handleAutoLogin() {
 // Function to be injected for automatic login
 function performAutoLogin(email, password) {
   return new Promise((resolve) => {
-    console.log('Performing auto-login...');
+    console.log('Performing auto-login for New Relic...');
+    console.log('Current URL:', window.location.href);
     
-    const checkForm = setInterval(() => {
-      const emailInput = document.querySelector('input[type="email"], input[name="email"], input[name="username"], #email, #username');
-      const passwordInput = document.querySelector('input[type="password"], input[name="password"], #password');
-      const nextButton = document.querySelector('button:contains("Next"), button[type="submit"], input[type="submit"]');
-
-      if (emailInput && passwordInput && nextButton) {
-        clearInterval(checkForm);
+    let step = 1; // 1 = email step, 2 = password step
+    
+    const performStep = () => {
+      if (step === 1) {
+        // Step 1: Find email input and fill it
+        const emailInput = document.querySelector('input[type="email"], input[name="email"], input[name="username"], #email, #username');
+        const nextButton = document.querySelector('button:contains("Next"), button[type="submit"], input[type="submit"], button');
         
-        console.log('Login form found, filling credentials...');
+        console.log('Step 1 - Email input found:', !!emailInput);
+        console.log('Step 1 - Next button found:', !!nextButton);
         
-        // Fill credentials
-        emailInput.value = email;
-        passwordInput.value = password;
+        if (emailInput && nextButton) {
+          // Fill email
+          emailInput.value = email;
+          emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+          emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+          
+          console.log('Email filled, clicking Next...');
+          
+          // Click Next button
+          setTimeout(() => {
+            nextButton.click();
+            step = 2;
+            
+            // Wait for password step to load
+            setTimeout(() => {
+              performStep();
+            }, 2000);
+          }, 1000);
+        } else {
+          console.log('Email step elements not found');
+          resolve(false);
+        }
+      } else if (step === 2) {
+        // Step 2: Find password input and fill it
+        const passwordInput = document.querySelector('input[type="password"], input[name="password"], #password');
+        const loginButton = document.querySelector('button[type="submit"], input[type="submit"], button:contains("Sign In"), button:contains("Log In")');
         
-        // Trigger events
-        emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-        emailInput.dispatchEvent(new Event('change', { bubbles: true }));
-        passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
-        passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
+        console.log('Step 2 - Password input found:', !!passwordInput);
+        console.log('Step 2 - Login button found:', !!loginButton);
         
-        // Click login button
-        setTimeout(() => {
-          nextButton.click();
-          resolve(true);
-        }, 1000);
+        if (passwordInput && loginButton) {
+          // Fill password
+          passwordInput.value = password;
+          passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+          passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
+          
+          console.log('Password filled, clicking login...');
+          
+          // Click login button
+          setTimeout(() => {
+            loginButton.click();
+            console.log('Login button clicked');
+            resolve(true);
+          }, 1000);
+        } else {
+          console.log('Password step elements not found');
+          resolve(false);
+        }
       }
-    }, 1000);
-
+    };
+    
+    // Start the process
+    setTimeout(performStep, 1000);
+    
+    // Timeout after 30 seconds
     setTimeout(() => {
-      clearInterval(checkForm);
+      console.log('Auto-login timeout');
       resolve(false);
     }, 30000);
   });

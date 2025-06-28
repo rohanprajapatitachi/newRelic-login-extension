@@ -44,6 +44,13 @@ document.addEventListener('DOMContentLoaded', function() {
   const importFromTextBtn = document.getElementById('importFromTextBtn');
   const exportStatus = document.getElementById('exportStatus');
 
+  // Debug tab elements
+  const testLoginBtn = document.getElementById('testLoginBtn');
+  const checkCurrentTabBtn = document.getElementById('checkCurrentTabBtn');
+  const clearStorageBtn = document.getElementById('clearStorageBtn');
+  const debugInfo = document.getElementById('debugInfo');
+  const debugStatus = document.getElementById('debugStatus');
+
   // Event listeners
   saveCredentialsBtn.addEventListener('click', saveCredentials);
   autoLoginBtn.addEventListener('click', toggleAutoLogin);
@@ -52,6 +59,9 @@ document.addEventListener('DOMContentLoaded', function() {
   exportSessionBtn.addEventListener('click', exportSession);
   importSessionBtn.addEventListener('click', importSession);
   importFromTextBtn.addEventListener('click', importFromText);
+  testLoginBtn.addEventListener('click', testAutoLogin);
+  checkCurrentTabBtn.addEventListener('click', checkCurrentTab);
+  clearStorageBtn.addEventListener('click', clearStorage);
 
   // Load initial data
   loadTabData('login');
@@ -67,6 +77,9 @@ async function loadTabData(tabName) {
       break;
     case 'export':
       await loadExportData();
+      break;
+    case 'debug':
+      await loadDebugData();
       break;
   }
 }
@@ -121,6 +134,24 @@ async function loadSessionData() {
 
 async function loadExportData() {
   // This tab doesn't need initial data loading
+}
+
+async function loadDebugData() {
+  try {
+    const result = await chrome.storage.local.get(['newrelic_credentials', 'newrelic_auto_login', 'newrelic_session_data']);
+    const sessionStatus = await chrome.runtime.sendMessage({ action: 'checkSessionStatus' });
+    
+    debugInfo.innerHTML = `
+      <strong>Stored Credentials:</strong> ${result.newrelic_credentials ? 'Yes' : 'No'}<br>
+      <strong>Auto-Login Enabled:</strong> ${result.newrelic_auto_login ? 'Yes' : 'No'}<br>
+      <strong>Stored Session:</strong> ${result.newrelic_session_data ? 'Yes' : 'No'}<br>
+      <strong>Current Login Status:</strong> ${sessionStatus.isLoggedIn ? 'Logged In' : 'Not Logged In'}<br>
+      <strong>Session Cookies:</strong> ${sessionStatus.sessionCount || 0}<br>
+      <strong>Extension Version:</strong> 1.0
+    `;
+  } catch (error) {
+    debugInfo.innerHTML = `Error loading debug data: ${error.message}`;
+  }
 }
 
 async function saveCredentials() {
@@ -332,4 +363,63 @@ function showExportStatus(message, type) {
   setTimeout(() => {
     statusDiv.style.display = 'none';
   }, 5000);
+}
+
+async function testAutoLogin() {
+  try {
+    showDebugStatus('Testing auto-login...', 'info');
+    
+    const response = await chrome.runtime.sendMessage({ action: 'autoLogin' });
+    
+    if (response.success) {
+      showDebugStatus(response.message, 'success');
+    } else {
+      showDebugStatus(`Error: ${response.error}`, 'error');
+    }
+  } catch (error) {
+    showDebugStatus(`Error: ${error.message}`, 'error');
+  }
+}
+
+async function checkCurrentTab() {
+  try {
+    showDebugStatus('Checking current tab...', 'info');
+    
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    if (tab.url && tab.url.includes('newrelic.com')) {
+      const response = await chrome.tabs.sendMessage(tab.id, { action: 'getPageInfo' });
+      
+      if (response) {
+        showDebugStatus(`Current tab: ${response.url}<br>Title: ${response.title}<br>Has login form: ${response.hasLoginForm}<br>Current step: ${response.currentStep}`, 'success');
+      } else {
+        showDebugStatus('No response from content script', 'error');
+      }
+    } else {
+      showDebugStatus(`Current tab is not New Relic: ${tab.url}`, 'info');
+    }
+  } catch (error) {
+    showDebugStatus(`Error: ${error.message}`, 'error');
+  }
+}
+
+async function clearStorage() {
+  try {
+    await chrome.storage.local.clear();
+    showDebugStatus('All stored data cleared successfully', 'success');
+    await loadDebugData(); // Refresh debug info
+  } catch (error) {
+    showDebugStatus(`Error clearing storage: ${error.message}`, 'error');
+  }
+}
+
+function showDebugStatus(message, type) {
+  const statusDiv = document.getElementById('debugStatus');
+  statusDiv.innerHTML = message;
+  statusDiv.className = `status ${type}`;
+  statusDiv.style.display = 'block';
+  
+  setTimeout(() => {
+    statusDiv.style.display = 'none';
+  }, 10000);
 } 

@@ -104,6 +104,7 @@
       <div class="tab active" data-tab="login">Login</div>
       <div class="tab" data-tab="sessions">Sessions</div>
       <div class="tab" data-tab="export">Export/Import</div>
+      <div class="tab" data-tab="debug">Debug</div>
     </div>
     
     <!-- Login Tab -->
@@ -152,6 +153,21 @@
       <button id="importFromTextBtn">Import from Text</button>
       
       <div id="exportStatus" class="status" style="display: none;"></div>
+    </div>
+    
+    <!-- Debug Tab -->
+    <div class="tab-content" id="debug-tab">
+      <h3>Debug Information</h3>
+      
+      <button id="testLoginBtn">Test Auto-Login</button>
+      <button id="checkCurrentTabBtn">Check Current Tab</button>
+      <button id="clearStorageBtn">Clear All Data</button>
+      
+      <div id="debugInfo" class="session-info">
+        Click buttons to see debug information...
+      </div>
+      
+      <div id="debugStatus" class="status" style="display: none;"></div>
     </div>
   </div>
   
