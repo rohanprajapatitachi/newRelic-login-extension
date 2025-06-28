@@ -12,31 +12,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 async function handleLogin(email, password) {
+  let tab = null;
   try {
-    // Navigate to New Relic login page
-    const tab = await chrome.tabs.create({
-      url: 'https://one.newrelic.com/catalogs/software?account=3352868&state=830c1da7-c969-9db7-4d42-a6e68226aa9d',
+    // Navigate to New Relic login page (not dashboard)
+    tab = await chrome.tabs.create({
+      url: 'https://login.newrelic.com/login',
       active: false
     });
 
     // Wait for page to load
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     // Inject login script
-    await chrome.scripting.executeScript({
+    const loginResult = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       function: performLogin,
       args: [email, password]
     });
 
-    // Wait for login to complete
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    console.log('Login script result:', loginResult);
+
+    if (!loginResult[0].result) {
+      await chrome.tabs.remove(tab.id);
+      return { success: false, error: 'Login form not found or login failed' };
+    }
+
+    // Wait for login to complete and page to redirect
+    await new Promise(resolve => setTimeout(resolve, 8000));
 
     // Check if login was successful
     const result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       function: checkLoginSuccess
     });
+
+    console.log('Login success check result:', result);
 
     if (result[0].result) {
       // Close the tab after successful login
@@ -47,6 +57,14 @@ async function handleLogin(email, password) {
       return { success: false, error: 'Login failed - please check credentials' };
     }
   } catch (error) {
+    console.error('Login error:', error);
+    if (tab) {
+      try {
+        await chrome.tabs.remove(tab.id);
+      } catch (e) {
+        console.error('Error closing tab:', e);
+      }
+    }
     return { success: false, error: error.message };
   }
 }
@@ -97,34 +115,47 @@ async function checkLoginStatus() {
 // Function to be injected into the page for login
 function performLogin(email, password) {
   return new Promise((resolve) => {
+    console.log('Starting login process...');
+    
     // Wait for login form to be available
     const checkForm = setInterval(() => {
-      const emailInput = document.querySelector('input[type="email"], input[name="email"], #email');
-      const passwordInput = document.querySelector('input[type="password"], input[name="password"], #password');
-      const loginButton = document.querySelector('button[type="submit"], input[type="submit"], .login-button');
+      console.log('Checking for login form...');
+      
+      // More comprehensive selectors for New Relic login form
+      const emailInput = document.querySelector('input[type="email"], input[name="email"], input[name="username"], #email, #username, [data-testid="email-input"]');
+      const passwordInput = document.querySelector('input[type="password"], input[name="password"], #password, [data-testid="password-input"]');
+      const loginButton = document.querySelector('button[type="submit"], input[type="submit"], .login-button, [data-testid="login-button"], button:contains("Sign In"), button:contains("Log In")');
+
+      console.log('Found elements:', { emailInput: !!emailInput, passwordInput: !!passwordInput, loginButton: !!loginButton });
 
       if (emailInput && passwordInput && loginButton) {
         clearInterval(checkForm);
+        
+        console.log('Login form found, filling credentials...');
         
         // Fill in credentials
         emailInput.value = email;
         passwordInput.value = password;
         
-        // Trigger input events
+        // Trigger input events to activate any validation
         emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+        emailInput.dispatchEvent(new Event('change', { bubbles: true }));
         passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+        passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
         
-        // Click login button
+        // Wait a bit then click login button
         setTimeout(() => {
+          console.log('Clicking login button...');
           loginButton.click();
           resolve(true);
-        }, 1000);
+        }, 2000);
       }
-    }, 500);
+    }, 1000);
 
     // Timeout after 30 seconds
     setTimeout(() => {
       clearInterval(checkForm);
+      console.log('Login form not found within timeout');
       resolve(false);
     }, 30000);
   });
@@ -132,6 +163,9 @@ function performLogin(email, password) {
 
 // Function to check if login was successful
 function checkLoginSuccess() {
+  console.log('Checking login success...');
+  console.log('Current URL:', window.location.href);
+  
   // Check for various indicators of successful login
   const indicators = [
     document.querySelector('.dashboard'),
@@ -139,9 +173,17 @@ function checkLoginSuccess() {
     document.querySelector('[data-testid="user-menu"]'),
     document.querySelector('.nav-user'),
     document.querySelector('.account-menu'),
+    document.querySelector('.user-avatar'),
+    document.querySelector('[data-testid="user-avatar"]'),
     document.location.href.includes('dashboard'),
-    document.location.href.includes('account')
+    document.location.href.includes('account'),
+    document.location.href.includes('one.newrelic.com'),
+    !document.location.href.includes('login.newrelic.com')
   ];
 
-  return indicators.some(indicator => indicator !== null);
+  const result = indicators.some(indicator => indicator !== null);
+  console.log('Login success indicators:', indicators);
+  console.log('Login success result:', result);
+  
+  return result;
 } 
