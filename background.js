@@ -1,4 +1,4 @@
-// Session storage keys
+// Enhanced Background Script with Better Login Detection
 const STORAGE_KEYS = {
   CREDENTIALS: 'newrelic_credentials',
   SESSION_DATA: 'newrelic_session_data',
@@ -38,12 +38,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       checkSessionStatus().then(sendResponse);
       return true;
       
-    case 'autoLogin':
-      handleAutoLogin().then(sendResponse);
+    case 'performManualLogin':
+      performManualLogin().then(sendResponse);
       return true;
       
     case 'loginFormReady':
-      handleLoginFormReady(sender.tab.id).then(sendResponse);
+      handleLoginFormReady(sender.tab.id, request.step).then(sendResponse);
       return true;
       
     case 'loginSuccess':
@@ -52,17 +52,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Listen for tab updates to detect New Relic login page
+// Enhanced tab monitoring for New Relic pages
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('login.newrelic.com')) {
-    console.log('New Relic login page detected:', tab.url);
-    
-    // Check if auto-login is enabled
-    chrome.storage.local.get([STORAGE_KEYS.AUTO_LOGIN], (result) => {
-      if (result[STORAGE_KEYS.AUTO_LOGIN]) {
-        console.log('Auto-login enabled, will trigger when form is ready...');
-      }
-    });
+  if (changeInfo.status === 'complete' && tab.url) {
+    if (tab.url.includes('login.newrelic.com')) {
+      console.log('New Relic login page detected:', tab.url);
+      
+      // Check if auto-login is enabled
+      chrome.storage.local.get([STORAGE_KEYS.AUTO_LOGIN], (result) => {
+        if (result[STORAGE_KEYS.AUTO_LOGIN]) {
+          console.log('Auto-login enabled, monitoring for login form...');
+        }
+      });
+    } else if (tab.url.includes('one.newrelic.com') || tab.url.includes('newrelic.com')) {
+      // Successful login detected
+      console.log('New Relic main site detected - login may be successful');
+    }
   }
 });
 
@@ -90,15 +95,24 @@ async function enableAutoLogin(enabled) {
   }
 }
 
-// Extract current session cookies
+// Enhanced session extraction with more cookie types
 async function extractSession() {
   try {
-    const cookies = await chrome.cookies.getAll({
-      domain: '.newrelic.com'
-    });
+    const domains = ['.newrelic.com', 'newrelic.com', 'one.newrelic.com', 'login.newrelic.com'];
+    let allCookies = [];
 
-    // Filter important session cookies
-    const sessionCookies = cookies.filter(cookie => 
+    // Get cookies from all New Relic domains
+    for (const domain of domains) {
+      try {
+        const cookies = await chrome.cookies.getAll({ domain: domain });
+        allCookies = allCookies.concat(cookies);
+      } catch (error) {
+        console.warn(`Failed to get cookies for domain ${domain}:`, error);
+      }
+    }
+
+    // Filter important session cookies (expanded list)
+    const sessionCookies = allCookies.filter(cookie => 
       cookie.name.includes('session') || 
       cookie.name.includes('auth') || 
       cookie.name.includes('token') ||
@@ -106,13 +120,19 @@ async function extractSession() {
       cookie.name.includes('user') ||
       cookie.name.includes('login') ||
       cookie.name.includes('_gd_session') ||
-      cookie.name.includes('golden_gate_session')
+      cookie.name.includes('golden_gate_session') ||
+      cookie.name.includes('JSESSIONID') ||
+      cookie.name.includes('remember') ||
+      cookie.name.includes('nreum') ||
+      cookie.name.includes('nr_') ||
+      cookie.name.startsWith('_') // Many session cookies start with underscore
     );
 
     const sessionData = {
       timestamp: Date.now(),
       cookies: sessionCookies,
-      userAgent: navigator.userAgent
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      domains: domains
     };
 
     // Save to storage
@@ -123,7 +143,7 @@ async function extractSession() {
     return {
       success: true,
       sessionData: sessionData,
-      message: `Extracted ${sessionCookies.length} session cookies`
+      message: `Extracted ${sessionCookies.length} session cookies from ${domains.length} domains`
     };
   } catch (error) {
     return { success: false, error: error.message };
@@ -138,28 +158,37 @@ async function applySession(sessionData) {
     }
 
     let appliedCount = 0;
+    const errors = [];
+
     for (const cookie of sessionData.cookies) {
       try {
+        // Construct proper URL for cookie setting
+        const protocol = cookie.secure ? 'https://' : 'http://';
+        const domain = cookie.domain.startsWith('.') ? cookie.domain.substring(1) : cookie.domain;
+        const url = `${protocol}${domain}${cookie.path}`;
+
         await chrome.cookies.set({
-          url: `https://${cookie.domain}${cookie.path}`,
+          url: url,
           name: cookie.name,
           value: cookie.value,
           domain: cookie.domain,
           path: cookie.path,
           secure: cookie.secure,
           httpOnly: cookie.httpOnly,
-          sameSite: cookie.sameSite,
+          sameSite: cookie.sameSite || 'lax',
           expirationDate: cookie.expirationDate
         });
         appliedCount++;
       } catch (cookieError) {
         console.warn('Failed to set cookie:', cookie.name, cookieError);
+        errors.push(`${cookie.name}: ${cookieError.message}`);
       }
     }
 
     return {
       success: true,
-      message: `Applied ${appliedCount} session cookies`
+      message: `Applied ${appliedCount} session cookies`,
+      errors: errors.length > 0 ? errors : null
     };
   } catch (error) {
     return { success: false, error: error.message };
@@ -177,9 +206,10 @@ async function exportSession() {
     }
 
     const exportData = {
-      version: '1.0',
+      version: '1.1',
       timestamp: Date.now(),
-      sessionData: sessionData
+      sessionData: sessionData,
+      source: 'New Relic Session Manager'
     };
 
     return {
@@ -214,17 +244,26 @@ async function importSession(sessionData) {
   }
 }
 
-// Check current session status
+// Enhanced session status check
 async function checkSessionStatus() {
   try {
-    const cookies = await chrome.cookies.getAll({
-      domain: '.newrelic.com'
-    });
+    const domains = ['.newrelic.com', 'newrelic.com', 'one.newrelic.com'];
+    let allCookies = [];
 
-    const hasSession = cookies.some(cookie => 
+    for (const domain of domains) {
+      try {
+        const cookies = await chrome.cookies.getAll({ domain: domain });
+        allCookies = allCookies.concat(cookies);
+      } catch (error) {
+        console.warn(`Failed to check cookies for ${domain}`);
+      }
+    }
+
+    const hasSession = allCookies.some(cookie => 
       cookie.name.includes('session') || 
       cookie.name.includes('auth') || 
-      cookie.name.includes('token')
+      cookie.name.includes('token') ||
+      cookie.name.includes('golden_gate_session')
     );
 
     const result = await chrome.storage.local.get([STORAGE_KEYS.SESSION_DATA, STORAGE_KEYS.AUTO_LOGIN]);
@@ -233,15 +272,57 @@ async function checkSessionStatus() {
       isLoggedIn: hasSession,
       hasStoredSession: !!result[STORAGE_KEYS.SESSION_DATA],
       autoLoginEnabled: result[STORAGE_KEYS.AUTO_LOGIN] || false,
-      sessionCount: cookies.length
+      sessionCount: allCookies.length,
+      domains: domains
     };
   } catch (error) {
     return { isLoggedIn: false, error: error.message };
   }
 }
 
+// Manual login trigger
+async function performManualLogin() {
+  try {
+    // Get stored credentials
+    const result = await chrome.storage.local.get([STORAGE_KEYS.CREDENTIALS]);
+    const credentials = result[STORAGE_KEYS.CREDENTIALS];
+    
+    if (!credentials) {
+      return { success: false, error: 'No stored credentials found' };
+    }
+
+    // Open New Relic login page or find existing tab
+    let tab;
+    const tabs = await chrome.tabs.query({ url: 'https://login.newrelic.com/*' });
+    
+    if (tabs.length > 0) {
+      tab = tabs[0];
+      await chrome.tabs.update(tab.id, { active: true });
+    } else {
+      tab = await chrome.tabs.create({ url: 'https://login.newrelic.com/' });
+    }
+
+    // Wait a bit for page to load, then trigger login
+    setTimeout(async () => {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          function: performAutoLogin,
+          args: [credentials.email, credentials.password]
+        });
+      } catch (error) {
+        console.error('Failed to execute login script:', error);
+      }
+    }, 3000);
+
+    return { success: true, message: 'Manual login initiated' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 // Handle login form ready notification
-async function handleLoginFormReady(tabId) {
+async function handleLoginFormReady(tabId, step) {
   try {
     // Check if auto-login is enabled
     const result = await chrome.storage.local.get([STORAGE_KEYS.AUTO_LOGIN]);
@@ -259,13 +340,13 @@ async function handleLoginFormReady(tabId) {
       return { success: false, message: 'No stored credentials found' };
     }
 
-    console.log('Starting auto-login process...');
+    console.log(`Starting auto-login process for step: ${step}...`);
     
     // Inject login script
     const loginResult = await chrome.scripting.executeScript({
       target: { tabId: tabId },
       function: performAutoLogin,
-      args: [credentials.email, credentials.password]
+      args: [credentials.email, credentials.password, step]
     });
 
     if (loginResult[0].result) {
@@ -286,8 +367,8 @@ async function handleLoginSuccess() {
   try {
     console.log('Login successful, extracting session...');
     
-    // Wait a bit for cookies to be set
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Wait for cookies to be set
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     // Extract session
     const result = await extractSession();
@@ -305,99 +386,160 @@ async function handleLoginSuccess() {
   }
 }
 
-// Handle automatic login (legacy function)
-async function handleAutoLogin() {
-  try {
-    // Get stored credentials
-    const result = await chrome.storage.local.get([STORAGE_KEYS.CREDENTIALS]);
-    const credentials = result[STORAGE_KEYS.CREDENTIALS];
-    
-    if (!credentials) {
-      return { success: false, error: 'No stored credentials found' };
-    }
-
-    // Find the New Relic login tab
-    const tabs = await chrome.tabs.query({
-      url: 'https://login.newrelic.com/*'
-    });
-
-    if (tabs.length === 0) {
-      return { success: false, error: 'No New Relic login tab found' };
-    }
-
-    const tab = tabs[0];
-    
-    // Inject login script
-    const loginResult = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      function: performAutoLogin,
-      args: [credentials.email, credentials.password]
-    });
-
-    if (loginResult[0].result) {
-      return { success: true, message: 'Auto-login process started' };
-    } else {
-      return { success: false, error: 'Auto-login failed' };
-    }
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-// Function to be injected for automatic login
-function performAutoLogin(email, password) {
+// Enhanced auto-login function with better error handling
+function performAutoLogin(email, password, currentStep = 'unknown') {
   return new Promise((resolve) => {
     console.log('Performing auto-login for New Relic...');
     console.log('Current URL:', window.location.href);
+    console.log('Current step:', currentStep);
     
-    let step = 1; // 1 = email step, 2 = password step
+    let step = currentStep === 'password' ? 2 : 1;
+    let attempts = 0;
+    const maxAttempts = 3;
     
     const performStep = () => {
+      attempts++;
+      console.log(`Attempt ${attempts}, Step ${step}`);
+      
+      if (attempts > maxAttempts) {
+        console.log('Max attempts reached');
+        resolve(false);
+        return;
+      }
+      
       if (step === 1) {
-        // Step 1: Find email input and fill it
-        const emailInput = document.querySelector('input[type="email"], input[name="email"], input[name="username"], #email, #username');
-        const nextButton = document.querySelector('button:contains("Next"), button[type="submit"], input[type="submit"], button');
+        // Step 1: Email input
+        const emailSelectors = [
+          'input[type="email"]',
+          'input[name="email"]', 
+          'input[name="username"]',
+          '#email',
+          '#username',
+          'input[placeholder*="email" i]',
+          'input[placeholder*="username" i]'
+        ];
+        
+        const buttonSelectors = [
+          'button[type="submit"]',
+          'input[type="submit"]',
+          'button:contains("Next")',
+          'button:contains("Continue")',
+          'button:contains("Sign In")',
+          'button',
+          '[role="button"]'
+        ];
+        
+        let emailInput = null;
+        let nextButton = null;
+        
+        // Find email input
+        for (const selector of emailSelectors) {
+          emailInput = document.querySelector(selector);
+          if (emailInput) break;
+        }
+        
+        // Find submit button
+        for (const selector of buttonSelectors) {
+          const buttons = document.querySelectorAll(selector);
+          for (const btn of buttons) {
+            if (btn.textContent.toLowerCase().includes('next') || 
+                btn.textContent.toLowerCase().includes('continue') ||
+                btn.textContent.toLowerCase().includes('sign') ||
+                btn.type === 'submit') {
+              nextButton = btn;
+              break;
+            }
+          }
+          if (nextButton) break;
+        }
         
         console.log('Step 1 - Email input found:', !!emailInput);
         console.log('Step 1 - Next button found:', !!nextButton);
         
         if (emailInput && nextButton) {
           // Fill email
+          emailInput.focus();
+          emailInput.value = '';
           emailInput.value = email;
+          
+          // Trigger events
           emailInput.dispatchEvent(new Event('input', { bubbles: true }));
           emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+          emailInput.dispatchEvent(new Event('blur', { bubbles: true }));
           
-          console.log('Email filled, clicking Next...');
+          console.log('Email filled:', email);
           
-          // Click Next button
+          // Click next button
           setTimeout(() => {
             nextButton.click();
+            console.log('Next button clicked');
             step = 2;
             
-            // Wait for password step to load
+            // Wait for password step
             setTimeout(() => {
               performStep();
-            }, 2000);
+            }, 3000);
           }, 1000);
         } else {
-          console.log('Email step elements not found');
-          resolve(false);
+          console.log('Email step elements not found, retrying...');
+          setTimeout(performStep, 2000);
         }
       } else if (step === 2) {
-        // Step 2: Find password input and fill it
-        const passwordInput = document.querySelector('input[type="password"], input[name="password"], #password');
-        const loginButton = document.querySelector('button[type="submit"], input[type="submit"], button:contains("Sign In"), button:contains("Log In")');
+        // Step 2: Password input
+        const passwordSelectors = [
+          'input[type="password"]',
+          'input[name="password"]',
+          '#password',
+          'input[placeholder*="password" i]'
+        ];
+        
+        const loginSelectors = [
+          'button[type="submit"]',
+          'input[type="submit"]',
+          'button:contains("Sign In")',
+          'button:contains("Log In")',
+          'button:contains("Login")',
+          'button'
+        ];
+        
+        let passwordInput = null;
+        let loginButton = null;
+        
+        // Find password input
+        for (const selector of passwordSelectors) {
+          passwordInput = document.querySelector(selector);
+          if (passwordInput) break;
+        }
+        
+        // Find login button
+        for (const selector of loginSelectors) {
+          const buttons = document.querySelectorAll(selector);
+          for (const btn of buttons) {
+            if (btn.textContent.toLowerCase().includes('sign') ||
+                btn.textContent.toLowerCase().includes('log') ||
+                btn.type === 'submit') {
+              loginButton = btn;
+              break;
+            }
+          }
+          if (loginButton) break;
+        }
         
         console.log('Step 2 - Password input found:', !!passwordInput);
         console.log('Step 2 - Login button found:', !!loginButton);
         
         if (passwordInput && loginButton) {
           // Fill password
+          passwordInput.focus();
+          passwordInput.value = '';
           passwordInput.value = password;
+          
+          // Trigger events
           passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
           passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
+          passwordInput.dispatchEvent(new Event('blur', { bubbles: true }));
           
-          console.log('Password filled, clicking login...');
+          console.log('Password filled');
           
           // Click login button
           setTimeout(() => {
@@ -406,8 +548,8 @@ function performAutoLogin(email, password) {
             resolve(true);
           }, 1000);
         } else {
-          console.log('Password step elements not found');
-          resolve(false);
+          console.log('Password step elements not found, retrying...');
+          setTimeout(performStep, 2000);
         }
       }
     };
@@ -415,10 +557,10 @@ function performAutoLogin(email, password) {
     // Start the process
     setTimeout(performStep, 1000);
     
-    // Timeout after 30 seconds
+    // Overall timeout
     setTimeout(() => {
-      console.log('Auto-login timeout');
+      console.log('Auto-login timeout after 60 seconds');
       resolve(false);
-    }, 30000);
+    }, 60000);
   });
-} 
+}

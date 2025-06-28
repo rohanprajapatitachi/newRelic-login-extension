@@ -63,6 +63,12 @@ document.addEventListener('DOMContentLoaded', function() {
   checkCurrentTabBtn.addEventListener('click', checkCurrentTab);
   clearStorageBtn.addEventListener('click', clearStorage);
 
+  // Add manual login button handler
+  const manualLoginBtn = document.getElementById('manualLoginBtn');
+  if (manualLoginBtn) {
+    manualLoginBtn.addEventListener('click', performManualLogin);
+  }
+
   // Load initial data
   loadTabData('login');
 });
@@ -422,4 +428,55 @@ function showDebugStatus(message, type) {
   setTimeout(() => {
     statusDiv.style.display = 'none';
   }, 10000);
+}
+
+async function performManualLogin() {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value.trim();
+  
+  if (!email || !password) {
+    showStatus('Please enter both email and password first', 'error');
+    return;
+  }
+
+  try {
+    // First save credentials
+    showStatus('Saving credentials and starting login...', 'info');
+    
+    const saveResult = await chrome.runtime.sendMessage({
+      action: 'saveCredentials',
+      email: email,
+      password: password
+    });
+
+    if (saveResult.success) {
+      // Now perform manual login
+      const loginResult = await chrome.runtime.sendMessage({
+        action: 'performManualLogin'
+      });
+
+      if (loginResult.success) {
+        showStatus('Login initiated! Check the New Relic tab.', 'success');
+        
+        // Auto-extract session after 10 seconds
+        setTimeout(async () => {
+          try {
+            const extractResult = await chrome.runtime.sendMessage({ action: 'extractSession' });
+            if (extractResult.success) {
+              showStatus('Login successful! Session extracted and saved.', 'success');
+            }
+          } catch (error) {
+            console.log('Auto-extract failed:', error);
+          }
+        }, 10000);
+        
+      } else {
+        showStatus(`Login failed: ${loginResult.error}`, 'error');
+      }
+    } else {
+      showStatus(`Failed to save credentials: ${saveResult.error}`, 'error');
+    }
+  } catch (error) {
+    showStatus(`Error: ${error.message}`, 'error');
+  }
 } 

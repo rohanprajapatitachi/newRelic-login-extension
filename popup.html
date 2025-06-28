@@ -108,22 +108,31 @@
     </div>
     
     <!-- Login Tab -->
-    <div class="tab-content active" id="login-tab">
-      <div class="input-group">
-        <label for="email">Email:</label>
-        <input type="email" id="email" placeholder="Enter your email">
-      </div>
-      
-      <div class="input-group">
-        <label for="password">Password:</label>
-        <input type="password" id="password" placeholder="Enter your password">
-      </div>
-      
-      <button id="saveCredentialsBtn">Save Credentials</button>
-      <button id="autoLoginBtn">Enable Auto-Login</button>
-      
-      <div id="status" class="status" style="display: none;"></div>
-    </div>
+    <!-- Enhanced Login Tab Section -->
+<div class="tab-content active" id="login-tab">
+  <div class="input-group">
+    <label for="email">Email:</label>
+    <input type="email" id="email" placeholder="Enter your email" value="bik@portpro.io">
+  </div>
+  
+  <div class="input-group">
+    <label for="password">Password:</label>
+    <input type="password" id="password" placeholder="Enter your password" value='X"HUE.#])E9]*/tj'>
+  </div>
+  
+  <button id="saveCredentialsBtn">Save Credentials</button>
+  <button id="manualLoginBtn" style="background-color: #28a745;">Login Now</button>
+  <button id="autoLoginBtn">Enable Auto-Login</button>
+  
+  <div class="session-info" style="margin-top: 10px;">
+    <strong>Quick Actions:</strong><br>
+    • Save credentials first<br>
+    • Click "Login Now" for immediate login<br>
+    • Enable auto-login for future visits
+  </div>
+  
+  <div id="status" class="status" style="display: none;"></div>
+</div>
     
     <!-- Sessions Tab -->
     <div class="tab-content" id="sessions-tab">
