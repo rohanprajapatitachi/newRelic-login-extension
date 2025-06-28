@@ -42,6 +42,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       performManualLogin().then(sendResponse);
       return true;
       
+    case 'debugPage':
+      debugPage(sender.tab.id).then(sendResponse);
+      return true;
+      
     case 'loginFormReady':
       handleLoginFormReady(sender.tab.id, request.step).then(sendResponse);
       return true;
@@ -297,7 +301,7 @@ async function performManualLogin() {
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          function: performAutoLoginFixed,
+          function: performAutoLogin,
           args: [credentials.email, credentials.password]
         });
       } catch (error) {
@@ -330,7 +334,7 @@ async function handleLoginFormReady(tabId, step) {
     
     const loginResult = await chrome.scripting.executeScript({
       target: { tabId: tabId },
-      function: performAutoLoginFixed,
+      function: performAutoLogin,
       args: [credentials.email, credentials.password, step]
     });
 
@@ -368,11 +372,94 @@ async function handleLoginSuccess() {
   }
 }
 
-// FIXED auto-login function with proper selectors
-function performAutoLoginFixed(email, password, currentStep = 'unknown') {
+// Debug function to inspect page elements
+function debugPageElements() {
+  console.log('=== DEBUGGING PAGE ELEMENTS ===');
+  console.log('Current URL:', window.location.href);
+  console.log('Page title:', document.title);
+  
+  // Check for email inputs
+  const emailInputs = document.querySelectorAll('input[type="email"], input[name="email"], input[name="username"], #email, #username');
+  console.log('Email inputs found:', emailInputs.length);
+  emailInputs.forEach((input, index) => {
+    console.log(`Email input ${index + 1}:`, {
+      type: input.type,
+      name: input.name,
+      id: input.id,
+      placeholder: input.placeholder,
+      visible: input.offsetParent !== null
+    });
+  });
+  
+  // Check for password inputs
+  const passwordInputs = document.querySelectorAll('input[type="password"], input[name="password"], #password');
+  console.log('Password inputs found:', passwordInputs.length);
+  passwordInputs.forEach((input, index) => {
+    console.log(`Password input ${index + 1}:`, {
+      type: input.type,
+      name: input.name,
+      id: input.id,
+      placeholder: input.placeholder,
+      visible: input.offsetParent !== null
+    });
+  });
+  
+  // Check for buttons
+  const buttons = document.querySelectorAll('button, input[type="submit"]');
+  console.log('Buttons found:', buttons.length);
+  buttons.forEach((button, index) => {
+    console.log(`Button ${index + 1}:`, {
+      type: button.type,
+      text: button.textContent.trim(),
+      visible: button.offsetParent !== null
+    });
+  });
+  
+  // Check for forms
+  const forms = document.querySelectorAll('form');
+  console.log('Forms found:', forms.length);
+  forms.forEach((form, index) => {
+    console.log(`Form ${index + 1}:`, {
+      action: form.action,
+      method: form.method,
+      inputs: form.querySelectorAll('input').length
+    });
+  });
+  
+  console.log('=== END DEBUG ===');
+  return {
+    emailInputs: emailInputs.length,
+    passwordInputs: passwordInputs.length,
+    buttons: buttons.length,
+    forms: forms.length
+  };
+}
+
+// Debug page function
+async function debugPage(tabId) {
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      function: debugPageElements
+    });
+    
+    return {
+      success: true,
+      debugInfo: result[0].result
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+// Enhanced auto-login function with better error handling
+function performAutoLogin(email, password, currentStep = 'unknown') {
   return new Promise((resolve) => {
-    console.log('=== NEW RELIC AUTO-LOGIN STARTING ===');
-    console.log('URL:', window.location.href);
+    console.log('Performing auto-login for New Relic...');
+    console.log('Current URL:', window.location.href);
     console.log('Current step:', currentStep);
     
     let step = currentStep === 'password' ? 2 : 1;
@@ -381,179 +468,181 @@ function performAutoLoginFixed(email, password, currentStep = 'unknown') {
     
     const performStep = () => {
       attempts++;
-      console.log(`=== ATTEMPT ${attempts}, STEP ${step} ===`);
+      console.log(`Attempt ${attempts}, Step ${step}`);
       
       if (attempts > maxAttempts) {
-        console.log('❌ Max attempts reached');
+        console.log('Max attempts reached');
         resolve(false);
         return;
       }
       
       if (step === 1) {
-        console.log('🔍 Looking for email input...');
-        
-        // Email selectors in order of preference
+        // Step 1: Email input
         const emailSelectors = [
           'input[type="email"]',
           'input[name="email"]', 
           'input[name="username"]',
           '#email',
           '#username',
-          'input[autocomplete="email"]',
-          'input[autocomplete="username"]'
+          'input[placeholder*="email" i]',
+          'input[placeholder*="username" i]'
+        ];
+        
+        const buttonSelectors = [
+          'button[type="submit"]',
+          'input[type="submit"]',
+          'button:contains("Next")',
+          'button:contains("Continue")',
+          'button:contains("Sign In")',
+          'button',
+          '[role="button"]'
         ];
         
         let emailInput = null;
-        for (const selector of emailSelectors) {
-          emailInput = document.querySelector(selector);
-          if (emailInput) {
-            console.log(`✅ Found email input with selector: ${selector}`);
-            break;
-          }
-        }
-        
-        if (!emailInput) {
-          console.log('❌ No email input found, retrying...');
-          setTimeout(performStep, 2000);
-          return;
-        }
-        
-        // Find submit/next button
-        console.log('🔍 Looking for next button...');
         let nextButton = null;
         
-        // Try submit buttons first
-        const submitButtons = document.querySelectorAll('button[type="submit"], input[type="submit"]');
-        if (submitButtons.length > 0) {
-          nextButton = submitButtons[0];
-          console.log('✅ Found submit button');
+        // Find email input
+        for (const selector of emailSelectors) {
+          emailInput = document.querySelector(selector);
+          if (emailInput) break;
         }
         
-        // If no submit button, look for buttons with text
-        if (!nextButton) {
-          const allButtons = document.querySelectorAll('button');
-          for (const btn of allButtons) {
-            const text = btn.textContent.toLowerCase().trim();
-            if (text.includes('next') || text.includes('continue') || text.includes('sign') || text.includes('log')) {
+        // Find submit button
+        for (const selector of buttonSelectors) {
+          const buttons = document.querySelectorAll(selector);
+          for (const btn of buttons) {
+            if (btn.textContent.toLowerCase().includes('next') || 
+                btn.textContent.toLowerCase().includes('continue') ||
+                btn.textContent.toLowerCase().includes('sign') ||
+                btn.type === 'submit') {
               nextButton = btn;
-              console.log(`✅ Found button with text: "${text}"`);
               break;
             }
           }
+          if (nextButton) break;
         }
         
-        if (!nextButton) {
-          console.log('❌ No next button found, retrying...');
+        console.log('Step 1 - Email input found:', !!emailInput);
+        console.log('Step 1 - Next button found:', !!nextButton);
+        
+        if (emailInput && nextButton) {
+          // Fill email
+          emailInput.focus();
+          emailInput.value = '';
+          emailInput.value = email;
+          
+          // Trigger events
+          emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+          emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+          emailInput.dispatchEvent(new Event('blur', { bubbles: true }));
+          
+          console.log('Email filled:', email);
+          
+          // Click next button
+          setTimeout(() => {
+            nextButton.click();
+            console.log('Next button clicked');
+            step = 2;
+            
+            // Wait for password step
+            setTimeout(() => {
+              performStep();
+            }, 3000);
+          }, 1000);
+        } else {
+          console.log('Email step elements not found, retrying...');
           setTimeout(performStep, 2000);
-          return;
         }
-        
-        // Fill email and submit
-        console.log('📝 Filling email field...');
-        emailInput.focus();
-        emailInput.value = '';
-        emailInput.value = email;
-        
-        // Trigger events
-        ['input', 'change', 'blur'].forEach(eventType => {
-          emailInput.dispatchEvent(new Event(eventType, { bubbles: true }));
-        });
-        
-        console.log('✅ Email filled:', email);
-        console.log('🖱️ Clicking next button...');
-        
-        setTimeout(() => {
-          nextButton.click();
-          console.log('✅ Next button clicked, waiting for password step...');
-          step = 2;
-          setTimeout(performStep, 3000);
-        }, 1000);
-        
       } else if (step === 2) {
-        console.log('🔍 Looking for password input...');
+        // Step 2: Password input - More comprehensive detection
+        console.log('Step 2 - Looking for password field...');
         
-        const passwordSelectors = [
-          'input[type="password"]',
-          'input[name="password"]',
-          '#password',
-          'input[autocomplete="current-password"]'
-        ];
-        
-        let passwordInput = null;
-        for (const selector of passwordSelectors) {
-          passwordInput = document.querySelector(selector);
-          if (passwordInput) {
-            console.log(`✅ Found password input with selector: ${selector}`);
-            break;
-          }
-        }
-        
-        if (!passwordInput) {
-          console.log('❌ No password input found, retrying...');
-          setTimeout(performStep, 2000);
-          return;
-        }
-        
-        // Find login button
-        console.log('🔍 Looking for login button...');
-        let loginButton = null;
-        
-        // Try submit buttons first
-        const submitButtons = document.querySelectorAll('button[type="submit"], input[type="submit"]');
-        if (submitButtons.length > 0) {
-          loginButton = submitButtons[0];
-          console.log('✅ Found submit button');
-        }
-        
-        // If no submit button, look for buttons with text
-        if (!loginButton) {
-          const allButtons = document.querySelectorAll('button');
-          for (const btn of allButtons) {
-            const text = btn.textContent.toLowerCase().trim();
-            if (text.includes('sign') || text.includes('log') || text.includes('submit')) {
-              loginButton = btn;
-              console.log(`✅ Found login button with text: "${text}"`);
+        // Wait a bit more for the password field to appear
+        setTimeout(() => {
+          const passwordSelectors = [
+            'input[type="password"]',
+            'input[name="password"]',
+            '#password',
+            'input[placeholder*="password" i]',
+            'input[autocomplete="current-password"]',
+            'input[data-testid*="password"]'
+          ];
+          
+          const loginSelectors = [
+            'button[type="submit"]',
+            'input[type="submit"]',
+            'button:contains("Sign In")',
+            'button:contains("Log In")',
+            'button:contains("Login")',
+            'button:contains("Submit")',
+            'button'
+          ];
+          
+          let passwordInput = null;
+          let loginButton = null;
+          
+          // Find password input
+          for (const selector of passwordSelectors) {
+            passwordInput = document.querySelector(selector);
+            if (passwordInput) {
+              console.log('Password input found with selector:', selector);
               break;
             }
           }
-        }
-        
-        if (!loginButton) {
-          console.log('❌ No login button found, retrying...');
-          setTimeout(performStep, 2000);
-          return;
-        }
-        
-        // Fill password and submit
-        console.log('🔐 Filling password field...');
-        passwordInput.focus();
-        passwordInput.value = '';
-        passwordInput.value = password;
-        
-        // Trigger events
-        ['input', 'change', 'blur'].forEach(eventType => {
-          passwordInput.dispatchEvent(new Event(eventType, { bubbles: true }));
-        });
-        
-        console.log('✅ Password filled');
-        console.log('🖱️ Clicking login button...');
-        
-        setTimeout(() => {
-          loginButton.click();
-          console.log('✅ Login button clicked!');
-          console.log('=== AUTO-LOGIN COMPLETED ===');
-          resolve(true);
-        }, 1000);
+          
+          // Find login button
+          for (const selector of loginSelectors) {
+            const buttons = document.querySelectorAll(selector);
+            for (const btn of buttons) {
+              const buttonText = btn.textContent.toLowerCase();
+              if (buttonText.includes('sign') ||
+                  buttonText.includes('log') ||
+                  buttonText.includes('submit') ||
+                  btn.type === 'submit') {
+                loginButton = btn;
+                console.log('Login button found with text:', btn.textContent);
+                break;
+              }
+            }
+            if (loginButton) break;
+          }
+          
+          console.log('Step 2 - Password input found:', !!passwordInput);
+          console.log('Step 2 - Login button found:', !!loginButton);
+          
+          if (passwordInput && loginButton) {
+            // Fill password
+            passwordInput.focus();
+            passwordInput.value = '';
+            passwordInput.value = password;
+            
+            // Trigger events
+            passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+            passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
+            passwordInput.dispatchEvent(new Event('blur', { bubbles: true }));
+            
+            console.log('Password filled');
+            
+            // Click login button
+            setTimeout(() => {
+              loginButton.click();
+              console.log('Login button clicked');
+              resolve(true);
+            }, 1000);
+          } else {
+            console.log('Password step elements not found, retrying...');
+            setTimeout(performStep, 2000);
+          }
+        }, 2000); // Wait 2 seconds for password field to appear
       }
     };
     
     // Start the process
-    console.log('⏱️ Starting login process in 1 second...');
     setTimeout(performStep, 1000);
     
     // Overall timeout
     setTimeout(() => {
-      console.log('⏰ Auto-login timeout after 60 seconds');
+      console.log('Auto-login timeout after 60 seconds');
       resolve(false);
     }, 60000);
   });

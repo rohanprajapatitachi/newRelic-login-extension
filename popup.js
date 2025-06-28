@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Debug tab elements
   const testLoginBtn = document.getElementById('testLoginBtn');
   const checkCurrentTabBtn = document.getElementById('checkCurrentTabBtn');
+  const debugPageBtn = document.getElementById('debugPageBtn');
   const clearStorageBtn = document.getElementById('clearStorageBtn');
   const debugInfo = document.getElementById('debugInfo');
   const debugStatus = document.getElementById('debugStatus');
@@ -61,6 +62,7 @@ document.addEventListener('DOMContentLoaded', function() {
   importFromTextBtn.addEventListener('click', importFromText);
   testLoginBtn.addEventListener('click', testAutoLogin);
   checkCurrentTabBtn.addEventListener('click', checkCurrentTab);
+  debugPageBtn.addEventListener('click', debugPage);
   clearStorageBtn.addEventListener('click', clearStorage);
 
   // Add manual login button handler
@@ -403,6 +405,32 @@ async function checkCurrentTab() {
       }
     } else {
       showDebugStatus(`Current tab is not New Relic: ${tab.url}`, 'info');
+    }
+  } catch (error) {
+    showDebugStatus(`Error: ${error.message}`, 'error');
+  }
+}
+
+async function debugPage() {
+  try {
+    showDebugStatus('Debugging page elements...', 'info');
+    
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    if (tab.url && tab.url.includes('newrelic.com')) {
+      const response = await chrome.runtime.sendMessage({
+        action: 'debugPage',
+        tabId: tab.id
+      });
+      
+      if (response.success) {
+        const info = response.debugInfo;
+        showDebugStatus(`Debug Results:<br>Email inputs: ${info.emailInputs}<br>Password inputs: ${info.passwordInputs}<br>Buttons: ${info.buttons}<br>Forms: ${info.forms}<br><br>Check console for detailed info.`, 'success');
+      } else {
+        showDebugStatus(`Debug failed: ${response.error}`, 'error');
+      }
+    } else {
+      showDebugStatus('Please navigate to a New Relic page first', 'error');
     }
   } catch (error) {
     showDebugStatus(`Error: ${error.message}`, 'error');
