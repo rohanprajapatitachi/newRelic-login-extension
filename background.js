@@ -502,3 +502,39 @@ function performAutoLogin(email, password) {
     setTimeout(() => resolve(false), 20000); // 20s overall timeout
   });
 }
+
+document.getElementById('loginBtn').onclick = async () => {
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  document.getElementById('status').textContent = 'Logging in...';
+  chrome.runtime.sendMessage({ action: 'login', email, password }, (resp) => {
+    document.getElementById('status').textContent = resp.success ? 'Logged in! Session extracted.' : 'Login failed: ' + resp.error;
+  });
+};
+
+document.getElementById('exportBtn').onclick = async () => {
+  chrome.runtime.sendMessage({ action: 'exportSession' }, (resp) => {
+    if (resp.success) {
+      document.getElementById('sessionData').value = resp.data;
+      document.getElementById('status').textContent = 'Session exported!';
+    } else {
+      document.getElementById('status').textContent = 'Export failed: ' + resp.error;
+    }
+  });
+};
+
+document.getElementById('importBtn').onclick = () => {
+  document.getElementById('importFile').click();
+};
+
+document.getElementById('importFile').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function() {
+    chrome.runtime.sendMessage({ action: 'importSession', data: reader.result }, (resp) => {
+      document.getElementById('status').textContent = resp.success ? 'Session imported!' : 'Import failed: ' + resp.error;
+    });
+  };
+  reader.readAsText(file);
+};
