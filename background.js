@@ -6,53 +6,71 @@ const STORAGE_KEYS = {
 };
 
 // Listen for messages from popup and content scripts
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Background received message:', request.action);
-  
-  switch (request.action) {
-    case 'saveCredentials':
-      saveCredentials(request.email, request.password).then(sendResponse);
-      return true;
-      
-    case 'enableAutoLogin':
-      enableAutoLogin(request.enabled).then(sendResponse);
-      return true;
-      
-    case 'extractSession':
-      extractSession().then(sendResponse);
-      return true;
-      
-    case 'applySession':
-      applySession(request.sessionData).then(sendResponse);
-      return true;
-      
-    case 'exportSession':
-      exportSession().then(sendResponse);
-      return true;
-      
-    case 'importSession':
-      importSession(request.sessionData).then(sendResponse);
-      return true;
-      
-    case 'checkSessionStatus':
-      checkSessionStatus().then(sendResponse);
-      return true;
-      
-    case 'performManualLogin':
-      performManualLogin().then(sendResponse);
-      return true;
-      
-    case 'debugPage':
-      debugPage(sender.tab.id).then(sendResponse);
-      return true;
-      
-    case 'loginFormReady':
-      handleLoginFormReady(sender.tab.id, request.step).then(sendResponse);
-      return true;
-      
-    case 'loginSuccess':
-      handleLoginSuccess().then(sendResponse);
-      return true;
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === 'login') {
+    chrome.tabs.create({ url: 'https://login.newrelic.com/', active: false }, (tab) => {
+      setTimeout(() => {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: (email, password) => {
+            const emailInput = document.querySelector('input[type="email"], input[name="email"], #email, input[autocomplete="username"]');
+            const passwordInput = document.querySelector('input[type="password"], input[name="password"], #password, input[autocomplete="current-password"]');
+            const loginBtn = Array.from(document.querySelectorAll('button, input[type="submit"]'))
+              .find(btn => btn.textContent.trim().toLowerCase().includes('log in') || btn.type === 'submit');
+            if (emailInput && passwordInput && loginBtn) {
+              emailInput.value = email;
+              emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+              passwordInput.value = password;
+              passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+              setTimeout(() => loginBtn.click(), 500);
+              return true;
+            }
+            return false;
+          },
+          args: [msg.email, msg.password]
+        }, async (results) => {
+          setTimeout(async () => {
+            const cookies = await chrome.cookies.getAll({ domain: '.newrelic.com' });
+            await chrome.storage.local.set({ sessionCookies: cookies });
+            sendResponse({ success: true });
+            chrome.tabs.remove(tab.id);
+          }, 5000);
+        });
+      }, 3000);
+    });
+    return true;
+  }
+  if (msg.action === 'exportSession') {
+    chrome.storage.local.get('sessionCookies', (data) => {
+      if (data.sessionCookies) {
+        sendResponse({ success: true, data: JSON.stringify(data.sessionCookies, null, 2) });
+      } else {
+        sendResponse({ success: false, error: 'No session found' });
+      }
+    });
+    return true;
+  }
+  if (msg.action === 'importSession') {
+    try {
+      const cookies = JSON.parse(msg.data);
+      cookies.forEach(cookie => {
+        chrome.cookies.set({
+          url: `https://${cookie.domain.replace(/^\./, '')}${cookie.path}`,
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain,
+          path: cookie.path,
+          secure: cookie.secure,
+          httpOnly: cookie.httpOnly,
+          sameSite: cookie.sameSite,
+          expirationDate: cookie.expirationDate
+        });
+      });
+      sendResponse({ success: true });
+    } catch (e) {
+      sendResponse({ success: false, error: e.message });
+    }
+    return true;
   }
 });
 

@@ -1,186 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
   <style>
-    body {
-      width: 400px;
-      padding: 20px;
-      font-family: Arial, sans-serif;
-    }
-    .container {
-      display: flex;
-      flex-direction: column;
-      gap: 15px;
-    }
-    .input-group {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
-    label {
-      font-weight: bold;
-      font-size: 14px;
-    }
-    input {
-      padding: 8px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 14px;
-    }
-    button {
-      padding: 10px;
-      background-color: #007cba;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: bold;
-    }
-    button:hover {
-      background-color: #005a87;
-    }
-    button:disabled {
-      background-color: #ccc;
-      cursor: not-allowed;
-    }
-    .status {
-      padding: 10px;
-      border-radius: 4px;
-      font-size: 14px;
-      margin-top: 10px;
-    }
-    .success {
-      background-color: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
-    }
-    .error {
-      background-color: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-    }
-    .info {
-      background-color: #d1ecf1;
-      color: #0c5460;
-      border: 1px solid #bee5eb;
-    }
-    .session-info {
-      background-color: #f8f9fa;
-      padding: 10px;
-      border-radius: 4px;
-      font-size: 12px;
-    }
-    .tabs {
-      display: flex;
-      border-bottom: 1px solid #ccc;
-      margin-bottom: 15px;
-    }
-    .tab {
-      padding: 10px 15px;
-      cursor: pointer;
-      border: 1px solid transparent;
-      border-bottom: none;
-      background: #f8f9fa;
-    }
-    .tab.active {
-      background: white;
-      border-color: #ccc;
-    }
-    .tab-content {
-      display: none;
-    }
-    .tab-content.active {
-      display: block;
-    }
+    body { font-family: Arial, sans-serif; width: 320px; padding: 16px; }
+    input, button { margin: 4px 0; width: 100%; }
+    textarea { width: 100%; height: 60px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h2>New Relic Session Manager</h2>
-    
-    <div class="tabs">
-      <div class="tab active" data-tab="login">Login</div>
-      <div class="tab" data-tab="sessions">Sessions</div>
-      <div class="tab" data-tab="export">Export/Import</div>
-      <div class="tab" data-tab="debug">Debug</div>
-    </div>
-    
-    <!-- Login Tab -->
-    <!-- Enhanced Login Tab Section -->
-<div class="tab-content active" id="login-tab">
-  <div class="input-group">
-    <label for="email">Email:</label>
-    <input type="email" id="email" placeholder="Enter your email" value="bik@portpro.io">
-  </div>
-  
-  <div class="input-group">
-    <label for="password">Password:</label>
-    <input type="password" id="password" placeholder="Enter your password" value='X"HUE.#])E9]*/tj'>
-  </div>
-  
-  <button id="saveCredentialsBtn">Save Credentials</button>
-  <button id="manualLoginBtn" style="background-color: #28a745;">Login Now</button>
-  <button id="autoLoginBtn">Enable Auto-Login</button>
-  
-  <div class="session-info" style="margin-top: 10px;">
-    <strong>Quick Actions:</strong><br>
-    • Save credentials first<br>
-    • Click "Login Now" for immediate login<br>
-    • Enable auto-login for future visits
-  </div>
-  
-  <div id="status" class="status" style="display: none;"></div>
-</div>
-    
-    <!-- Sessions Tab -->
-    <div class="tab-content" id="sessions-tab">
-      <h3>Current Session Status</h3>
-      <div id="sessionStatus" class="session-info">
-        Checking session status...
-      </div>
-      
-      <button id="extractSessionBtn">Extract Current Session</button>
-      <button id="applySessionBtn">Apply Stored Session</button>
-      
-      <div id="sessionStatusMsg" class="status" style="display: none;"></div>
-    </div>
-    
-    <!-- Export/Import Tab -->
-    <div class="tab-content" id="export-tab">
-      <h3>Session Management</h3>
-      
-      <button id="exportSessionBtn">Export Session to File</button>
-      <button id="importSessionBtn">Import Session from File</button>
-      
-      <div class="input-group">
-        <label for="sessionData">Session Data (for manual import):</label>
-        <textarea id="sessionData" rows="5" placeholder="Paste session data here..."></textarea>
-      </div>
-      
-      <button id="importFromTextBtn">Import from Text</button>
-      
-      <div id="exportStatus" class="status" style="display: none;"></div>
-    </div>
-    
-    <!-- Debug Tab -->
-    <div class="tab-content" id="debug-tab">
-      <h3>Debug Information</h3>
-      
-      <button id="testLoginBtn">Test Auto-Login</button>
-      <button id="checkCurrentTabBtn">Check Current Tab</button>
-      <button id="debugPageBtn">Debug Page Elements</button>
-      <button id="clearStorageBtn">Clear All Data</button>
-      
-      <div id="debugInfo" class="session-info">
-        Click buttons to see debug information...
-      </div>
-      
-      <div id="debugStatus" class="status" style="display: none;"></div>
-    </div>
-  </div>
-  
+  <h3>New Relic Session Exporter</h3>
+  <input id="email" type="email" placeholder="Email" />
+  <input id="password" type="password" placeholder="Password" />
+  <button id="loginBtn">Login & Extract Session</button>
+  <button id="exportBtn">Export Session</button>
+  <input type="file" id="importFile" style="display:none" />
+  <button id="importBtn">Import Session</button>
+  <textarea id="sessionData" placeholder="Session data for import/export"></textarea>
+  <div id="status"></div>
   <script src="popup.js"></script>
 </body>
 </html> 
